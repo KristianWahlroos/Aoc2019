@@ -125,8 +125,12 @@ fn count_stuff(start_string: String, end_string: String) {
                             if e > f {
                                 continue;
                             }
-                            if a == b || b == c || c == d || d == e || e == f {
-                                println!("found one: {}{}{}{}{}{}", a, b, c, d, e, f);
+                            if (a == b && b != c)
+                                || (a != b && b == c && c != d)
+                                || (b != c && c == d && d != e)
+                                || (c != d && d == e && e != f)
+                                || (d != e && e == f)
+                            {
                                 counter += 1;
                             }
                         }
@@ -135,5 +139,5 @@ fn count_stuff(start_string: String, end_string: String) {
             }
         }
     }
-    println!("{}", counter);
+    println!("part two answer: {}", counter);
 }

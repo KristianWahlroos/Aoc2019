@@ -7,31 +7,55 @@ struct Program {
 }
 
 impl Program {
-    fn calculate_chunk(&mut self) -> (i32, bool, Result<i32, Error>) {
+    fn calculate_chunk(&mut self) -> (i32, usize, Option<Result<i32, Error>>) {
         let opcode = self.memory[self.index] % 100;
-        let first_param = (self.memory[self.index] % 1000 - opcode)/100;
-        let second_param = (self.memory[self.index] % 10000 - first_param - opcode)/1000;
-        let third_param = (self.memory[self.index] - second_param - first_param - opcode)/10000;
+        let first_param = (self.memory[self.index] % 1000 - opcode) / 100;
+        let second_param = (self.memory[self.index] % 10000 - first_param - opcode) / 1000;
+        let third_param = (self.memory[self.index] - second_param - first_param - opcode) / 10000;
         match opcode {
             1 => (
                 third_param,
-                true,
-                Ok(self.memory[self.get_index(first_param, 1)]
-                + self.memory[self.get_index(second_param, 2)]),
+                4,
+                Some(Ok(self.memory[self.get_index(first_param, 1)]
+                    + self.memory[self.get_index(second_param, 2)])),
             ),
-            2 => {
-                (third_param,
-                true,
-                Ok(self.memory[self.get_index(first_param, 1)]
-                    * self.memory[self.get_index(second_param, 2)]),
-            )},
-            3 => (third_param, false, get_user_input()),
-            4 => (third_param, false, {
+            2 => (
+                third_param,
+                4,
+                Some(Ok(self.memory[self.get_index(first_param, 1)]
+                    * self.memory[self.get_index(second_param, 2)])),
+            ),
+            3 => (first_param, 2, Some(get_user_input())),
+            4 => (first_param, 2, {
                 self.print_output(first_param);
-                Ok(self.memory[self.get_index(first_param, 1)])
+                None
             }),
-            99 => (third_param, false, Err(Error::from(ErrorKind::Other))),
-            _ => (third_param, false, Err(Error::from(ErrorKind::InvalidData))),
+            5 if self.memory[self.get_index(first_param, 1)] != 0 => {
+                self.index = self.memory[self.get_index(second_param, 2)] as usize;
+                (second_param, 0, None)
+            }
+            6 if self.memory[self.get_index(first_param, 1)] == 0 => {
+                self.index = self.memory[self.get_index(second_param, 2)] as usize;
+                (second_param, 0, None)
+            }
+            7 if self.memory[self.get_index(first_param, 1)]
+                < self.memory[self.get_index(second_param, 2)] =>
+            {
+                (third_param, 4, Some(Ok(1)))
+            }
+            8 if self.memory[self.get_index(first_param, 1)]
+                == self.memory[self.get_index(second_param, 2)] =>
+            {
+                (third_param, 4, Some(Ok(1)))
+            }
+            5 | 6 => (second_param, 3, None),
+            7 | 8 => (third_param, 4, Some(Ok(0))),
+            99 => (third_param, 0, Some(Err(Error::from(ErrorKind::Other)))),
+            _ => (
+                third_param,
+                0,
+                Some(Err(Error::from(ErrorKind::InvalidData))),
+            ),
         }
     }
 
@@ -39,7 +63,10 @@ impl Program {
         match param {
             0 => self.memory[self.index + order] as usize,
             1 => self.index + order,
-            _ => {println!("jou{}", param); ::std::process::exit(1)},
+            _ => {
+                println!("jou{}", param);
+                ::std::process::exit(1)
+            }
         }
     }
 
@@ -69,30 +96,30 @@ fn main() {
     loop {
         let (imm_addr, increment, result) = &program.calculate_chunk();
 
-        let result_integer = *match result {
-            Ok(v) => v,
-            Err(e) => match e.kind() {
-                ErrorKind::Other => {
-                    break;
+        match result {
+            Some(a) => match a {
+                Ok(v) => {
+                    let save_address = program.get_index(*imm_addr, increment - 1);
+                    program.memory[save_address] = *v;
                 }
-                _ => {
-                    eprintln!("index: {} + error: {:?}", program.index, e);
-                    ::std::process::exit(1);
-                }
+                Err(e) => match e.kind() {
+                    ErrorKind::Other => {
+                        break;
+                    }
+                    _ => {
+                        eprintln!("index: {} + error: {:?}", program.index, e);
+                        ::std::process::exit(1);
+                    }
+                },
             },
+            None => (),
         };
-        if *increment {
-            program.index = program.index + 2;
-        }
-        let save_address = program.get_index(*imm_addr, 1);
-        program.memory[save_address] = result_integer;
-        program.index = program.index + 2;
+        program.index = program.index + increment;
         if program.index >= numbers_len {
             eprintln!("index: {} memory[0]: {}", program.index, program.memory[0]);
             ::std::process::exit(1);
         }
     }
-    println!("first part answer: {}", program.memory[0]);
 }
 
 fn open_file() -> File {

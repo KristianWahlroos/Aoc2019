@@ -1,244 +1,367 @@
 use std::fs::File;
-use std::io::{BufRead, BufReader, Error, ErrorKind};
+use std::io::{BufRead, BufReader};
 
 struct Program {
-    memories: [Vec<i64>; 5],
+    amplifiers: Vec<Amplifier>,
+    current_amplifier_index: usize,
+}
+
+struct Amplifier {
     index: usize,
-    phase_index: usize,
-    phases: [i64; 5],
-    input: i64,
-    output: i64,
-    output_check: bool,
-    phase_phase: bool,
-    all_phases_inputed: bool,
+    memory: Vec<i32>,
+    phase_stack: Option<i32>,
+    output: Option<i32>,
+    last_amplifier_output: i32,
 }
 
 impl Program {
-    fn calculate_chunk(&mut self) -> (i64, usize, Option<Result<i64, Error>>) {
-        let opcode = self.memories[self.phase_index][self.index] % 100;
-        let first_param = (self.memories[self.phase_index][self.index] % 1000 - opcode) / 100;
-        let second_param =
-            (self.memories[self.phase_index][self.index] % 10000 - first_param - opcode) / 1000;
-        let third_param =
-            (self.memories[self.phase_index][self.index] - second_param - first_param - opcode)
-                / 10000;
-        match opcode {
-            1 => (
-                third_param,
-                4,
-                Some(Ok(self.memories[self.phase_index]
-                    [self.get_index(first_param, 1)]
-                    + self.memories[self.phase_index]
-                        [self.get_index(second_param, 2)])),
-            ),
-            2 => (
-                third_param,
-                4,
-                Some(Ok(self.memories[self.phase_index]
-                    [self.get_index(first_param, 1)]
-                    * self.memories[self.phase_index]
-                        [self.get_index(second_param, 2)])),
-            ),
-            3 => (first_param, 2, Some(self.get_input())),
-            4 => (first_param, 2, {
-                self.store_output(first_param);
-                None
-            }),
-            5 if self.memories[self.phase_index][self.get_index(first_param, 1)] != 0 => {
-                self.index =
-                    self.memories[self.phase_index][self.get_index(second_param, 2)] as usize;
-                (second_param, 0, None)
-            }
-            6 if self.memories[self.phase_index][self.get_index(first_param, 1)] == 0 => {
-                self.index =
-                    self.memories[self.phase_index][self.get_index(second_param, 2)] as usize;
-                (second_param, 0, None)
-            }
-            7 if self.memories[self.phase_index][self.get_index(first_param, 1)]
-                < self.memories[self.phase_index][self.get_index(second_param, 2)] =>
-            {
-                (third_param, 4, Some(Ok(1)))
-            }
-            8 if self.memories[self.phase_index][self.get_index(first_param, 1)]
-                == self.memories[self.phase_index][self.get_index(second_param, 2)] =>
-            {
-                (third_param, 4, Some(Ok(1)))
-            }
-            5 | 6 => (second_param, 3, None),
-            7 | 8 => (third_param, 4, Some(Ok(0))),
-            99 => (third_param, 0, Some(Err(Error::from(ErrorKind::Other)))),
-            _ => (
-                third_param,
-                0,
-                Some(Err(Error::from(ErrorKind::InvalidData))),
-            ),
+    fn create_program(memory: Vec<i32>, permutation: Vec<i32>) -> Program {
+        let mut amplifiers: Vec<Amplifier> = Vec::new();
+        for phase in permutation {
+            amplifiers.push(Amplifier {
+                index: 0,
+                memory: memory.clone(),
+                phase_stack: Some(phase),
+                output: None,
+                last_amplifier_output: 0,
+            })
+        }
+        Program {
+            amplifiers: amplifiers,
+            current_amplifier_index: 0,
         }
     }
 
-    fn get_index(&self, param: i64, order: usize) -> usize {
-        match param {
-            0 => self.memories[self.phase_index][self.index + order] as usize,
-            1 => self.index + order,
-            _ => {
-                println!("jou{}", param);
-                ::std::process::exit(1)
+    fn start_program(&mut self) -> i32 {
+        self.amplifiers[self.current_amplifier_index].run(0);
+        let mut program_output = 0;
+        loop {
+            match self.go_to_next_amplifier() {
+                false => (),
+                true => {
+                    program_output = self.amplifiers[self.current_amplifier_index]
+                        .output
+                        .unwrap_or(0);
+                    break;
+                }
             }
         }
+        program_output
     }
 
-    fn store_output(&mut self, param: i64) {
-        self.output_check = true;
-        self.output = self.memories[self.phase_index][self.get_index(param, 1)];
-    }
-
-    fn get_input(&mut self) -> Result<i64, Error> {
-        match self.phase_phase && !self.all_phases_inputed {
-            true => {
-                self.phase_phase = false;
-                Ok(self.phases[self.phase_index])
-            }
-            false => Ok(self.input),
+    fn go_to_next_amplifier(&mut self) -> bool {
+        let last_amplifier_output = self.amplifiers[self.current_amplifier_index]
+            .output
+            .unwrap_or(0);
+        let mut last_amplifier = false;
+        if self.current_amplifier_index + 1 == self.amplifiers.len() {
+            // self.current_amplifier_index = 0;
+            last_amplifier = true;
+        } else {
+            self.current_amplifier_index = self.current_amplifier_index + 1;
+            self.amplifiers[self.current_amplifier_index].run(last_amplifier_output);
         }
+        last_amplifier
     }
 }
 
-fn run(memory: Vec<i64>, phases: [i64; 5]) -> i64 {
-    let mut program = Program {
-        memories: [
-            memory.clone(),
-            memory.clone(),
-            memory.clone(),
-            memory.clone(),
-            memory.clone(),
-        ],
-        index: 0,
-        phase_index: 0,
-        phases: phases,
-        input: 0,
-        output: 0,
-        output_check: false,
-        phase_phase: true,
-        all_phases_inputed: false,
-    };
-    let numbers_len = program.memories[program.phase_index].len();
-    loop {
-        loop {
-            let (imm_addr, increment, result) = &program.calculate_chunk();
+impl Amplifier {
+    fn parse_opcode(opcode: i32) -> i32 {
+        opcode % 100
+    }
 
-            match result {
-                Some(a) => match a {
-                    Ok(v) => {
-                        let save_address = program.get_index(*imm_addr, increment - 1);
-                        program.memories[program.phase_index][save_address] = *v;
-                    }
-                    Err(e) => match e.kind() {
-                        ErrorKind::Other => {
-                            break;
-                        }
-                        _ => {
-                            eprintln!("index: {} + error: {:?}", program.index, e);
-                            ::std::process::exit(1);
-                        }
-                    },
+    fn param_count(parsed_opcode: i32) -> usize {
+        match parsed_opcode {
+            1 | 2 | 7 | 8 => 3,
+            5 | 6 => 2,
+            3 | 4 => 1,
+            _ => 0,
+        }
+    }
+
+    fn get_opcode(&self) -> i32 {
+        self.memory[self.index]
+    }
+
+    fn get_operands(&self) -> Vec<i32> {
+        let opcode = self.get_opcode();
+        let parsed_opcode = Amplifier::parse_opcode(opcode);
+        let param_count = Amplifier::param_count(parsed_opcode);
+        let mut operands: Vec<i32> = Vec::new();
+        for i in 0..param_count {
+            operands.push(
+                match (opcode % (1000 * (10i32.pow(i as u32)))) / (100 * (10i32.pow(i as u32))) {
+                    1 if param_count == i + 1 => (self.index + i + 1) as i32,
+                    0 if param_count == i + 1 => self.memory[(self.index + i + 1)],
+                    1 => self.memory[(self.index + i + 1)],
+                    0 => self.memory[self.memory[self.index + i + 1] as usize],
+                    _ => panic!("Invalid opcode parameter"),
                 },
-                None => (),
-            };
-            program.index = program.index + increment;
-            if program.index >= numbers_len {
-                eprintln!(
-                    "index: {} memory[0]: {}",
-                    program.index, program.memories[program.phase_index][0]
-                );
-                ::std::process::exit(1);
+            );
+        }
+        operands
+    }
+
+    fn run(&mut self, last_amplifier_output: i32) {
+        self.last_amplifier_output = last_amplifier_output;
+        self.index = 0;
+        self.output = None;
+        loop {
+            match self.calculate_chunk() {
+                true => break,
+                false => (),
             }
         }
-
-        program.phase_phase = true;
-        program.memories[program.phase_index] = memory.clone();
-        if !program.output_check {
-            break;
-        }
-        if program.phase_index >= 4 {
-            program.all_phases_inputed = true;
-            program.phase_index = 0;
-        } else {
-            program.phase_index = program.phase_index + 1;
-        }
-        program.input = program.output;
-        program.output_check = false;
-        program.index = 0;
     }
-    program.output
+
+    fn calculate_chunk(&mut self) -> bool {
+        let parsed_opcode = Amplifier::parse_opcode(self.get_opcode());
+        match parsed_opcode {
+            1 => self.sum(),
+            2 => self.multiply(),
+            3 => self.get_input(),
+            4 => self.set_output(),
+            5 => self.jump_if_zero_is_(false),
+            6 => self.jump_if_zero_is_(true),
+            7 => self.store_if_less(),
+            8 => self.store_if_equal(),
+            99 => (),
+            _ => println!("{}", parsed_opcode),
+        };
+        match parsed_opcode {
+            99 => true,
+            _ => false,
+        }
+    }
+
+    fn store(&mut self, a: i32, to: usize) {
+        self.memory[to] = a;
+    }
+
+    fn increase_index(&mut self, amount: usize) {
+        self.index = self.index + amount;
+    }
+
+    fn jump_to_index(&mut self, index: usize) {
+        self.index = index;
+    }
+
+    //match 1:
+    fn sum(&mut self) {
+        let operands = self.get_operands();
+        self.store(operands[0] + operands[1], operands[2] as usize);
+        self.increase_index(operands.len() + 1)
+    }
+
+    //match 2:
+    fn multiply(&mut self) {
+        let operands = self.get_operands();
+        self.store(operands[0] * operands[1], operands[2] as usize);
+        self.increase_index(operands.len() + 1)
+    }
+    //match 3:
+    fn get_input(&mut self) {
+        let operands = self.get_operands();
+        self.memory[operands[0] as usize] = match self.phase_stack {
+            Some(v) => {
+                self.phase_stack = None;
+                v
+            }
+            _ => self.last_amplifier_output,
+        };
+        self.increase_index(operands.len() + 1)
+    }
+
+    //match 4:
+    fn set_output(&mut self) {
+        let operands = self.get_operands();
+        self.output = Some(self.memory[operands[0] as usize]);
+        self.increase_index(operands.len() + 1)
+    }
+
+    //match 5|6:
+    fn jump_if_zero_is_(&mut self, equal: bool) {
+        let operands = self.get_operands();
+        match equal {
+            true if operands[0] == 0 => {
+                self.jump_to_index(self.memory[operands[1] as usize] as usize)
+            }
+            false if operands[0] != 0 => {
+                self.jump_to_index(self.memory[operands[1] as usize] as usize)
+            }
+            _ => self.increase_index(operands.len() + 1),
+        }
+    }
+
+    //match 7:
+    fn store_if_less(&mut self) {
+        let operands = self.get_operands();
+        match operands[0] < operands[1] {
+            true => self.store(1, operands[2] as usize),
+            false => self.store(0, operands[2] as usize),
+        };
+        self.increase_index(operands.len() + 1);
+    }
+
+    //match 8:
+    fn store_if_equal(&mut self) {
+        let operands = self.get_operands();
+        match operands[0] == operands[1] {
+            true => self.store(1, operands[2] as usize),
+            false => self.store(0, operands[2] as usize),
+        };
+        self.increase_index(operands.len() + 1);
+    }
 }
 
 fn main() {
-    let buf_reader = BufReader::new(open_file());
+    let buf_reader = BufReader::new(File::open("input.txt").unwrap());
     let memory = buf_reader
-        .split(",".chars().next().unwrap() as u8)
-        .map(|c| i64::from_str_radix(std::str::from_utf8(&c.unwrap()).unwrap(), 10).unwrap())
-        .collect::<Vec<i64>>();
+        .split(b',')
+        .map(|c| i32::from_str_radix(std::str::from_utf8(&c.unwrap()).unwrap(), 10).unwrap())
+        .collect::<Vec<i32>>();
+    let permutations = get_all_permutations(1, 5);
     let mut highest_output = 0;
-    // for permutation in get_all_permutations() {
-    //     let output = run(memory.clone(), permutation);
-    //     if output > highest_output {
-    //         highest_output = output;
-    //     }
-    // }
-    highest_output = run(memory.clone(), [5, 6, 7, 8, 9]);
-    println!("Highest output is: {}", highest_output);
+    for permutation in permutations {
+        highest_output = Program::create_program(memory.clone(), permutation).start_program();
+    }
+    println!("highest output: {}", highest_output)
 }
 
-fn get_all_permutations() -> Vec<[i64; 5]> {
-    let mut permutations: Vec<[i64; 5]> = Vec::new();
-    for a in 0..5 {
-        for b in 0..5 {
-            if b == a {
-                continue;
-            }
-            for c in 0..5 {
-                if c == a {
-                    continue;
-                }
-                if c == b {
-                    continue;
-                }
-                for d in 0..5 {
-                    if d == a {
-                        continue;
-                    }
-                    if d == b {
-                        continue;
-                    }
-                    if d == c {
-                        continue;
-                    }
-                    for e in 0..5 {
-                        if e == a {
-                            continue;
-                        }
-                        if e == b {
-                            continue;
-                        }
-                        if e == c {
-                            continue;
-                        }
-                        if e == d {
-                            continue;
-                        }
-                        println!("Permutataion foudn: {}{}{}{}{}", a, b, c, d, e);
-                        permutations.push([a, b, c, d, e])
-                    }
-                }
-            }
-        }
-    }
+fn get_all_permutations(start: i32, size: i32) -> Vec<Vec<i32>> {
+    let mut permutations: Vec<Vec<i32>> = Vec::new();
+    let depth = size;
+    let mut permutation: Vec<i32> = Vec::new();
+    iterate_permutations(start, size, depth, &mut permutations, &mut permutation);
     permutations
 }
 
-fn open_file() -> File {
-    let file = match File::open("input.txt") {
-        Err(_) => panic!("couldn't open the file"),
-        Ok(file) => file,
-    };
-    file
+fn iterate_permutations(
+    start: i32,
+    size: i32,
+    depth: i32,
+    permutations: &mut Vec<Vec<i32>>,
+    permutation: &mut Vec<i32>,
+) {
+    if depth == 0 {
+        permutations.push(permutation.clone());
+    } else {
+        'please: for id in start..start + size {
+            for number in permutation.clone() {
+                if number == id {
+                    continue 'please;
+                }
+            }
+            permutation.push(id);
+            iterate_permutations(start, size, depth - 1, permutations, permutation);
+            permutation.pop();
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn test_get_all_permutations() {
+        assert_eq!(120, get_all_permutations(1, 5).len());
+        assert_eq!(120, get_all_permutations(0, 5).len());
+        assert_eq!(120, get_all_permutations(-6, 5).len());
+        assert_eq!(40320, get_all_permutations(-6, 8).len());
+        assert_eq!(vec!(5, 4, 3, 2, 1, 0), get_all_permutations(0, 6)[719]);
+    }
+
+    #[test]
+    fn test_operand_get() {
+        let amplifier = Amplifier {
+            memory: vec![1001, 0, 20, 4, 99],
+            index: 0,
+            output: Some(0),
+            last_amplifier_output: 0,
+            phase_stack: Some(1),
+        };
+        let vector = amplifier.get_operands();
+        assert_eq!(1001, vector[0]);
+        assert_eq!(20, vector[1]);
+        assert_eq!(99, amplifier.memory[vector[2] as usize]);
+        assert_eq!(4, vector[2]);
+    }
+
+    #[test]
+    fn test_sum() {
+        let mut program = Program::create_program(vec![1001, 0, 20, 1, 99], vec![1]);
+        program.start_program();
+        assert_eq!(1021, program.amplifiers[0].memory[1]);
+    }
+    #[test]
+    fn test_multiply() {
+        let mut program = Program::create_program(vec![102, 20, 0, 2, 99], vec![1]);
+        program.start_program();
+        assert_eq!(2040, program.amplifiers[0].memory[2]);
+    }
+    #[test]
+    fn test_get_input() {
+        let mut program = Program::create_program(vec![3, 1, 3, 3, 99], vec![1]);
+        program.start_program();
+        assert_eq!(1, program.amplifiers[0].memory[1]);
+        assert_eq!(0, program.amplifiers[0].memory[3]);
+    }
+
+    #[test]
+    fn test_get_output() {
+        let mut program = Program::create_program(vec![4, 2, 99], vec![1]);
+        program.start_program();
+        assert_eq!(99, program.amplifiers[0].output.unwrap());
+    }
+
+    #[test]
+    fn test_jump_if_zero_is_not_equal() {
+        let mut program = Program::create_program(vec![101, -1, 5, 5, 1105, 5, 0, 99], vec![1]);
+        assert_eq!(5, program.amplifiers[0].memory[5]);
+        program.start_program();
+        assert_eq!(0, program.amplifiers[0].memory[5]);
+    }
+
+    #[test]
+    fn test_jump_if_zero_is_equal() {
+        let mut program =
+            Program::create_program(vec![1106, 0, 7, 1101, 100, 234, 0, 106, 1, 1, 99], vec![1]);
+        program.start_program();
+        assert_eq!(1106, program.amplifiers[0].memory[0]);
+    }
+
+    #[test]
+    fn test_program_1() {
+        let mut program = Program::create_program(
+            vec![
+                3, 15, 3, 16, 1002, 16, 10, 16, 1, 16, 15, 15, 4, 15, 99, 0, 0,
+            ],
+            vec![4, 3, 2, 1, 0],
+        );
+        assert_eq!(43210, program.start_program());
+    }
+
+    #[test]
+    fn test_program_2() {
+        let mut program = Program::create_program(
+            vec![
+                3, 23, 3, 24, 1002, 24, 10, 24, 1002, 23, -1, 23, 101, 5, 23, 23, 1, 24, 23, 23, 4,
+                23, 99, 0, 0,
+            ],
+            vec![0, 1, 2, 3, 4],
+        );
+        assert_eq!(54321, program.start_program());
+    }
+
+    #[test]
+    fn test_program_3() {
+        let mut program = Program::create_program(
+            vec![
+                3, 31, 3, 32, 1002, 32, 10, 32, 1001, 31, -2, 31, 1007, 31, 0, 33, 1002, 33, 7, 33,
+                1, 33, 31, 31, 1, 32, 31, 31, 4, 31, 99, 0, 0, 0,
+            ],
+            vec![1, 0, 4, 3, 2],
+        );
+        assert_eq!(65210, program.start_program());
+    }
 }

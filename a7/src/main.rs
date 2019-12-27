@@ -36,32 +36,26 @@ impl Program {
         self.amplifiers[self.current_amplifier_index].run(0);
         let mut program_output = 0;
         loop {
-            match self.go_to_next_amplifier() {
-                false => (),
-                true => {
-                    program_output = self.amplifiers[self.current_amplifier_index]
-                        .output
-                        .unwrap_or(0);
-                    break;
-                }
+            match self.amplifiers[self.current_amplifier_index].output {
+                Some(v) => println!("{}",v),
+                None => break,
             }
+            self.go_to_next_amplifier();
         }
         program_output
     }
 
-    fn go_to_next_amplifier(&mut self) -> bool {
+    fn go_to_next_amplifier(&mut self) {
         let last_amplifier_output = self.amplifiers[self.current_amplifier_index]
             .output
-            .unwrap_or(0);
-        let mut last_amplifier = false;
+            .unwrap();
         if self.current_amplifier_index + 1 == self.amplifiers.len() {
-            // self.current_amplifier_index = 0;
-            last_amplifier = true;
+            self.current_amplifier_index = 0;
+            self.amplifiers[self.current_amplifier_index].run(last_amplifier_output);
         } else {
             self.current_amplifier_index = self.current_amplifier_index + 1;
             self.amplifiers[self.current_amplifier_index].run(last_amplifier_output);
         }
-        last_amplifier
     }
 }
 
@@ -309,9 +303,9 @@ mod tests {
 
     #[test]
     fn test_get_output() {
-        let mut program = Program::create_program(vec![4, 2, 99], vec![1]);
+        let mut program = Program::create_program(vec![4, 6, 1, 7, 6, 0, 99, 0], vec![1]);
         program.start_program();
-        assert_eq!(99, program.amplifiers[0].output.unwrap());
+        assert_eq!(99, program.amplifiers[0].last_amplifier_output);
     }
 
     #[test]
@@ -334,34 +328,23 @@ mod tests {
     fn test_program_1() {
         let mut program = Program::create_program(
             vec![
-                3, 15, 3, 16, 1002, 16, 10, 16, 1, 16, 15, 15, 4, 15, 99, 0, 0,
-            ],
-            vec![4, 3, 2, 1, 0],
+                3,52,1001,52,-5,52,3,53,1,52,56,54,1007,54,5,55,1005,55,26,1001,54,
+                -5,54,1105,1,12,1,53,54,53,1008,54,0,55,1001,55,1,55,2,53,55,53,4,
+                53,1001,56,-1,56,1005,56,6,99,0,0,0,0,10            ],
+            vec![9,7,8,5,6],
         );
-        assert_eq!(43210, program.start_program());
+        assert_eq!(18216, program.start_program());
     }
 
     #[test]
     fn test_program_2() {
         let mut program = Program::create_program(
             vec![
-                3, 23, 3, 24, 1002, 24, 10, 24, 1002, 23, -1, 23, 101, 5, 23, 23, 1, 24, 23, 23, 4,
-                23, 99, 0, 0,
+                3, 26, 1001, 26, -4, 26, 3, 27, 1002, 27, 2, 27, 1, 27, 26, 27, 4, 27, 1001, 28,
+                -1, 28, 1005, 28, 6, 99, 0, 0, 5,
             ],
-            vec![0, 1, 2, 3, 4],
+            vec![9,8,7,6,5],
         );
-        assert_eq!(54321, program.start_program());
-    }
-
-    #[test]
-    fn test_program_3() {
-        let mut program = Program::create_program(
-            vec![
-                3, 31, 3, 32, 1002, 32, 10, 32, 1001, 31, -2, 31, 1007, 31, 0, 33, 1002, 33, 7, 33,
-                1, 33, 31, 31, 1, 32, 31, 31, 4, 31, 99, 0, 0, 0,
-            ],
-            vec![1, 0, 4, 3, 2],
-        );
-        assert_eq!(65210, program.start_program());
+        assert_eq!(139629729, program.start_program());
     }
 }

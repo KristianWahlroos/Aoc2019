@@ -11,7 +11,7 @@ struct Amplifier {
     memory: Vec<i32>,
     phase_stack: Option<i32>,
     output: Option<i32>,
-    last_amplifier_output: i32,
+    last_amplifier_output: Option<i32>,
 }
 
 impl Program {
@@ -23,7 +23,7 @@ impl Program {
                 memory: memory.clone(),
                 phase_stack: Some(phase),
                 output: None,
-                last_amplifier_output: 0,
+                last_amplifier_output: Some(0),
             })
         }
         Program {
@@ -33,11 +33,13 @@ impl Program {
     }
 
     fn start_program(&mut self) -> i32 {
-        self.amplifiers[self.current_amplifier_index].run(0);
+        self.amplifiers[self.current_amplifier_index].run(Some(0));
         let mut program_output = 0;
         loop {
             match self.amplifiers[self.current_amplifier_index].output {
-                Some(v) => println!("{}",v),
+                Some(v) => {
+                    program_output = v
+                }
                 None => break,
             }
             self.go_to_next_amplifier();
@@ -47,8 +49,7 @@ impl Program {
 
     fn go_to_next_amplifier(&mut self) {
         let last_amplifier_output = self.amplifiers[self.current_amplifier_index]
-            .output
-            .unwrap();
+            .output.take();
         if self.current_amplifier_index + 1 == self.amplifiers.len() {
             self.current_amplifier_index = 0;
             self.amplifiers[self.current_amplifier_index].run(last_amplifier_output);
@@ -96,10 +97,8 @@ impl Amplifier {
         operands
     }
 
-    fn run(&mut self, last_amplifier_output: i32) {
+    fn run(&mut self, last_amplifier_output: Option<i32>) {
         self.last_amplifier_output = last_amplifier_output;
-        self.index = 0;
-        self.output = None;
         loop {
             match self.calculate_chunk() {
                 true => break,
@@ -114,18 +113,22 @@ impl Amplifier {
             1 => self.sum(),
             2 => self.multiply(),
             3 => self.get_input(),
-            4 => self.set_output(),
+            4 => {
+                self.set_output();
+                return true;
+            }
             5 => self.jump_if_zero_is_(false),
             6 => self.jump_if_zero_is_(true),
             7 => self.store_if_less(),
             8 => self.store_if_equal(),
-            99 => (),
+            99 => return true,
             _ => println!("{}", parsed_opcode),
         };
         match parsed_opcode {
             99 => true,
             _ => false,
         }
+        false
     }
 
     fn store(&mut self, a: i32, to: usize) {
@@ -156,12 +159,10 @@ impl Amplifier {
     //match 3:
     fn get_input(&mut self) {
         let operands = self.get_operands();
-        self.memory[operands[0] as usize] = match self.phase_stack {
-            Some(v) => {
-                self.phase_stack = None;
-                v
-            }
-            _ => self.last_amplifier_output,
+        self.memory[operands[0] as usize] = match self.phase_stack.take() {
+            Some(v) => {v
+            },
+            _ => self.last_amplifier_output.take().unwrap(),
         };
         self.increase_index(operands.len() + 1)
     }
@@ -214,10 +215,13 @@ fn main() {
         .split(b',')
         .map(|c| i32::from_str_radix(std::str::from_utf8(&c.unwrap()).unwrap(), 10).unwrap())
         .collect::<Vec<i32>>();
-    let permutations = get_all_permutations(1, 5);
+    let permutations = get_all_permutations(5, 5);
     let mut highest_output = 0;
     for permutation in permutations {
-        highest_output = Program::create_program(memory.clone(), permutation).start_program();
+        let output = Program::create_program(memory.clone(), permutation).start_program();
+        if highest_output < output {
+            highest_output = output;
+        }
     }
     println!("highest output: {}", highest_output)
 }
@@ -271,7 +275,7 @@ mod tests {
             memory: vec![1001, 0, 20, 4, 99],
             index: 0,
             output: Some(0),
-            last_amplifier_output: 0,
+            last_amplifier_output: Some(0),
             phase_stack: Some(1),
         };
         let vector = amplifier.get_operands();
@@ -305,7 +309,7 @@ mod tests {
     fn test_get_output() {
         let mut program = Program::create_program(vec![4, 6, 1, 7, 6, 0, 99, 0], vec![1]);
         program.start_program();
-        assert_eq!(99, program.amplifiers[0].last_amplifier_output);
+        assert_eq!(99, program.amplifiers[0].last_amplifier_output.unwrap());
     }
 
     #[test]
@@ -328,10 +332,11 @@ mod tests {
     fn test_program_1() {
         let mut program = Program::create_program(
             vec![
-                3,52,1001,52,-5,52,3,53,1,52,56,54,1007,54,5,55,1005,55,26,1001,54,
-                -5,54,1105,1,12,1,53,54,53,1008,54,0,55,1001,55,1,55,2,53,55,53,4,
-                53,1001,56,-1,56,1005,56,6,99,0,0,0,0,10            ],
-            vec![9,7,8,5,6],
+                3, 52, 1001, 52, -5, 52, 3, 53, 1, 52, 56, 54, 1007, 54, 5, 55, 1005, 55, 26, 1001,
+                54, -5, 54, 1105, 1, 12, 1, 53, 54, 53, 1008, 54, 0, 55, 1001, 55, 1, 55, 2, 53,
+                55, 53, 4, 53, 1001, 56, -1, 56, 1005, 56, 6, 99, 0, 0, 0, 0, 10,
+            ],
+            vec![9, 7, 8, 5, 6],
         );
         assert_eq!(18216, program.start_program());
     }
@@ -343,7 +348,7 @@ mod tests {
                 3, 26, 1001, 26, -4, 26, 3, 27, 1002, 27, 2, 27, 1, 27, 26, 27, 4, 27, 1001, 28,
                 -1, 28, 1005, 28, 6, 99, 0, 0, 5,
             ],
-            vec![9,8,7,6,5],
+            vec![9, 8, 7, 6, 5],
         );
         assert_eq!(139629729, program.start_program());
     }

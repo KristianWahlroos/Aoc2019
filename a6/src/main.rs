@@ -12,7 +12,15 @@ fn main() {
     for line in relationships {
         add_connection(&mut objects, line);
     }
-    println!("RESULT: {}", find_orbit_count(&objects, None, 0));
+    println!("PART 1 RESULT: {}", find_orbit_count(&objects, None, 0));
+    let route1 = find_route(&objects, &String::from("YOU"));
+    let route2 = find_route(&objects, &String::from("SAN"));
+    let crossing = find_crossing(&route1, &route2).unwrap();
+    let crossed_route = find_route(&objects, &crossing);
+    println!(
+        "PART 2 RESULT: {}",
+        count_distance(route1.len(), route2.len(), crossed_route.len())
+    );
 }
 
 struct Object {
@@ -69,6 +77,45 @@ fn find_orbit_count(objects: &Vec<Object>, name: Option<String>, orbit_depth: i3
     orbit_count
 }
 
+fn find_parent_of_object(objects: &Vec<Object>, name: &String) -> Option<String> {
+    for object in objects {
+        if &object.name == name {
+            return object.parent.clone();
+        }
+    }
+    None
+}
+
+fn count_distance(route1: usize, route2: usize, crossed_route: usize) -> usize {
+    route1 + route2 - ((crossed_route + 1) * 2)
+}
+
+fn find_route(objects: &Vec<Object>, name: &String) -> Vec<String> {
+    let mut route: Vec<String> = Vec::new();
+    let mut parent_name = name.clone();
+    loop {
+        //Better be acyclic
+        parent_name = match find_parent_of_object(&objects, &parent_name) {
+            Some(v) => v,
+            None => return route,
+        };
+        route.push(parent_name.clone());
+    }
+    route
+}
+
+fn find_crossing(route1: &Vec<String>, route2: &Vec<String>) -> Option<String> {
+    //Assumed they are in order
+    for waypoint1 in route1 {
+        for waypoint2 in route2 {
+            if waypoint1 == waypoint2 {
+                return Some(waypoint1.clone());
+            }
+        }
+    }
+    return None;
+}
+
 impl Object {
     fn add_parent(&mut self, name: String) {
         self.parent = Some(name);
@@ -103,5 +150,67 @@ mod tests {
             add_connection(&mut objects, line);
         }
         assert_eq!(42, find_orbit_count(&objects, None, 0));
+    }
+
+    #[test]
+    fn test_test2() {
+        let test_input = vec![
+            String::from("COM)B"),
+            String::from("B)C"),
+            String::from("C)D"),
+            String::from("D)E"),
+            String::from("E)F"),
+            String::from("B)G"),
+            String::from("G)H"),
+            String::from("D)I"),
+            String::from("E)J"),
+            String::from("J)K"),
+            String::from("K)L"),
+            String::from("K)YOU"),
+            String::from("I)SAN"),
+        ];
+        let mut objects: Vec<Object> = Vec::new();
+        for line in test_input {
+            add_connection(&mut objects, line);
+        }
+        let route1 = find_route(&objects, &String::from("YOU"));
+        let route2 = find_route(&objects, &String::from("SAN"));
+        let crossing = find_crossing(&route1, &route2).unwrap();
+        let crossed_route = find_route(&objects, &crossing);
+        assert_eq!(
+            4,
+            count_distance(route1.len(), route2.len(), crossed_route.len())
+        );
+    }
+
+    #[test]
+    fn test_route() {
+        let test_input = vec![
+            String::from("COM)B"),
+            String::from("B)C"),
+            String::from("C)D"),
+            String::from("D)E"),
+            String::from("E)F"),
+            String::from("B)G"),
+            String::from("G)H"),
+            String::from("D)I"),
+            String::from("E)J"),
+            String::from("J)K"),
+            String::from("K)L"),
+            String::from("K)YOU"),
+            String::from("I)SAN"),
+        ];
+        let mut objects: Vec<Object> = Vec::new();
+        for line in test_input {
+            add_connection(&mut objects, line);
+        }
+        let route = find_route(&objects, &String::from("YOU"));
+        assert_eq!(route[0], String::from("K"));
+        assert_eq!(route[1], String::from("J"));
+        assert_eq!(route[2], String::from("E"));
+        assert_eq!(route[3], String::from("D"));
+        assert_eq!(route[4], String::from("C"));
+        assert_eq!(route[5], String::from("B"));
+        assert_eq!(route[6], String::from("COM"));
     }
 }

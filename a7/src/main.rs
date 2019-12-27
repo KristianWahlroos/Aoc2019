@@ -124,10 +124,6 @@ impl Amplifier {
             99 => return true,
             _ => println!("{}", parsed_opcode),
         };
-        match parsed_opcode {
-            99 => true,
-            _ => false,
-        }
         false
     }
 

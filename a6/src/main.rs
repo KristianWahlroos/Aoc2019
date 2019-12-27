@@ -24,11 +24,10 @@ fn object_exists(objects: &mut Vec<Object>, name: &String) -> bool {
     let mut exists: bool = false;
     for object in objects {
         if &object.name == name {
-            exists = true;
-            break;
+            return true;
         }
     }
-    exists
+    false
 }
 
 fn try_add_parent(objects: &mut Vec<Object>, child: &String, parent: &String) -> bool {
@@ -36,11 +35,10 @@ fn try_add_parent(objects: &mut Vec<Object>, child: &String, parent: &String) ->
     for object in objects {
         if &object.name == child {
             object.add_parent(parent.clone());
-            exists = true;
-            break;
+            return true;
         }
     }
-    exists
+    false
 }
 
 fn add_connection(objects: &mut Vec<Object>, line: String) {

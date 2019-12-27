@@ -21,7 +21,6 @@ struct Object {
 }
 
 fn object_exists(objects: &mut Vec<Object>, name: &String) -> bool {
-    let mut exists: bool = false;
     for object in objects {
         if &object.name == name {
             return true;
@@ -31,7 +30,6 @@ fn object_exists(objects: &mut Vec<Object>, name: &String) -> bool {
 }
 
 fn try_add_parent(objects: &mut Vec<Object>, child: &String, parent: &String) -> bool {
-    let mut exists: bool = false;
     for object in objects {
         if &object.name == child {
             object.add_parent(parent.clone());

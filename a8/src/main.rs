@@ -25,4 +25,22 @@ fn main() {
         }
     }
     println!("Part 1 answer: {}", answer.1);
+    for x in 0..150 {
+        if x % 25 == 0 {
+            println!("");
+        }
+        for chunk in &chunks {
+            match chunk[x] {
+                b'1' => {
+                    print!("■");
+                    break;
+                }
+                b'0' => {
+                    print!(" ");
+                    break;
+                }
+                _ => (),
+            }
+        }
+    }
 }
